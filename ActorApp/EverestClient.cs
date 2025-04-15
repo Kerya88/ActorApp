@@ -1,73 +1,144 @@
-﻿using Akka.Configuration.Hocon;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Reflection.Emit;
-using System.Security.Policy;
+﻿using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace ActorApp
 {
     public class EverestClient
     {
         private readonly HttpClient _httpClient;
+        private readonly Uri _baseUri =  new ("https://everest.distcomp.org");
 
         public EverestClient(string token)
         {
-            var handler = new HttpClientHandler
+            var httpHandler = new HttpClientHandler
             {
-                CookieContainer = new CookieContainer()
+                UseCookies = true,
+                CookieContainer = new CookieContainer(),
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
-            handler.CookieContainer.Add(new Uri("https://everest.distcomp.org"), new Cookie("access_token", "qobfc6tzfpbatax5q8jevcva6cstn1ctm62k7fzdkfgz4qnlizyj6a950yt06aat"));
-            _httpClient = new HttpClient(handler)
+            httpHandler.CookieContainer.Add(_baseUri, new Cookie("access_token", token)
             {
-                BaseAddress = new Uri("https://everest.distcomp.org/api")
-            };
-            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                Path = "/",
+                Secure = false,
+                HttpOnly = false,
+                Expires = DateTime.MinValue
+            });
+            
+            _httpClient = new HttpClient(httpHandler);
+            _httpClient.BaseAddress = _baseUri;
+            _httpClient.DefaultRequestHeaders.Accept.Clear();
+            _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            _httpClient.DefaultRequestHeaders.Add("charsets", "utf-8");
+            
+            var testResponse = _httpClient.GetAsync("/api/jobs/0").Result;
+            
+            if (testResponse.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                token = GetToken("Kerya88", "RUZ365gar31", "ActorApp");
+                    
+                httpHandler.CookieContainer.Add(_baseUri, new Cookie("access_token", token)
+                {
+                    Path = "/",
+                    Secure = false,
+                    HttpOnly = false,
+                    Expires = DateTime.MinValue
+                });
+            }
+        }
+        
+        public string RunJob(string name, string[] resources, Dictionary<string, object> inputs, string appId)
+        {
+            var jsonData = JsonSerializer.Serialize(new { name, inputs, resources });
+            var request = new StringContent(jsonData, Encoding.UTF8, "application/json");
+            
+            var response = _httpClient.PostAsync($"/api/apps/{appId}", request).Result;
+                
+            response.EnsureSuccessStatusCode();
+            
+            var responseBody = response.Content.ReadAsStringAsync().Result;
+            var json = JsonSerializer.Deserialize<Dictionary<string, object>>(responseBody);
+            var jobId = json!["id"].ToString()!;
+            
+            return jobId;
         }
 
-        public async Task<string> GetToken(string username, string password, string label)
+        public (bool, string) CheckState(string jodId)
+        {
+            var response = _httpClient.GetAsync($"/api/jobs/{jodId}").Result;
+            
+            response.EnsureSuccessStatusCode();
+
+            var responseBody = response.Content.ReadAsStringAsync().Result;
+            var json = JsonSerializer.Deserialize<Dictionary<string,object>>(responseBody)!;
+            
+            var deleteResult = _httpClient.DeleteAsync($"/api/jobs/{jodId}").Result;
+
+            switch (json["state"].ToString()!)
+            {
+                case "DONE":
+                {
+                    return (true, JsonSerializer.Deserialize<InnerResult>(JsonSerializer.Serialize(json["result"])).partialSum.Replace("\n", ""));
+                }
+                case "FAILED":
+                case "CANCELLED":
+                {
+                    return (true, json["info"].ToString()!);
+                }
+                default:
+                {
+                    return (true, "");
+                }
+            }
+        }
+        
+        private string GetToken(string username, string password, string label)
         {
             var jsonData = JsonSerializer.Serialize(new { username, password, label });
             var request = new StringContent(jsonData, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync($"/auth/access_token", request);
+            var response = _httpClient.PostAsync($"/auth/access_token", request).Result;
             response.EnsureSuccessStatusCode();
 
-            var responseBody = await response.Content.ReadAsStringAsync();
+            var responseBody = response.Content.ReadAsStringAsync().Result;
             var json = JsonSerializer.Deserialize<Dictionary<string, object>>(responseBody);
             var token = json!["access_token"].ToString()!;
 
             return token;
         }
 
-        public async Task RunJob(string name, string[] resources, Dictionary<string, object> inputs, string appId)
+        private class OuterResult
         {
-            var jsonData = JsonSerializer.Serialize(new { name, inputs, resources });
-            var request = new StringContent(jsonData, Encoding.UTF8, "application/json");
-
-            var response = await _httpClient.PostAsync($"/apps/{appId}", request);
-
-            var ss = await response.Content.ReadAsStringAsync();
-
-            response.EnsureSuccessStatusCode();
-
-            var responseBody = await response.Content.ReadAsStringAsync();
-            var json = JsonSerializer.Deserialize<Dictionary<string, string>>(responseBody);
+            public string Id { get; set; }
+            public string Name { get; set; }
+            public string AppId { get; set; }
+            public string AppAlias { get; set; }
+            public string AppName { get; set; }
+            public string AppVersion { get; set; }
+            public string User { get; set; }
+            public string State { get; set; }
+            public int Submitted { get; set; }
+            public Inputs Inputs { get; set; }
+            public object ResourceRequirments { get; set; }
+            public string[] Resources { get; set; }
+            public string[] AllowList { get; set; }
+            public int LastUpdateTime { get; set; }
+            public string Description { get; set; }
+            public bool NotifyUser { get; set; }
+            public int DataSize { get; set; }
+            public string Info { get; set; }
+            public InnerResult Result { get; set; }
         }
-
-        public async Task CheckState(string jodId)
+        private class Inputs
         {
-            var response = await _httpClient.GetAsync($"/jobs/{jodId}");
-            response.EnsureSuccessStatusCode();
-
-            var responseBody = await response.Content.ReadAsStringAsync();
-            var json = JsonSerializer.Deserialize<Dictionary<string, string>>(responseBody);
+            public string S { get; set; }
+            public string F { get; set; }
+        }
+        
+        private class InnerResult
+        {
+            public string partialSum { get; set; }
         }
     }
 }
