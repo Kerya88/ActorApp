@@ -2,13 +2,17 @@
 
 namespace PiCalculator
 {
+    //программа для вычисления частичной суммы на платформе everest
     public class Program
     {
         static void Main(string[] args)
         {
+            //получение из командной строки начала диапазона вычислений
             var start = int.Parse(args[0]);
+            //получение из командной строки конца диапазона вычислений
             var finish = int.Parse(args[1]);
             
+            //частичная сумма
             var sum = 0d;
             
             var stopwatch = Stopwatch.StartNew();

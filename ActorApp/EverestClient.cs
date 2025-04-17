@@ -7,22 +7,33 @@ namespace ActorApp
 {
     public class EverestClient
     {
+        //http клиент
         private readonly HttpClient _httpClient;
+        //базовый адрес
         private readonly Uri _baseUri =  new ("https://everest.distcomp.org");
 
         public EverestClient(string token)
         {
+            //http обработчик
             var httpHandler = new HttpClientHandler
             {
+                //использовать куки
                 UseCookies = true,
+                //контейнер куки
                 CookieContainer = new CookieContainer(),
+                //обработка сертификата сервера
                 ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
             };
+            //добавление куки с токеном
             httpHandler.CookieContainer.Add(_baseUri, new Cookie("access_token", token)
             {
+                //распространяется на весь домен
                 Path = "/",
+                //не секретный
                 Secure = false,
+                //не только для http
                 HttpOnly = false,
+                //не истекает
                 Expires = DateTime.MinValue
             });
             
@@ -31,25 +42,12 @@ namespace ActorApp
             _httpClient.DefaultRequestHeaders.Accept.Clear();
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             _httpClient.DefaultRequestHeaders.Add("charsets", "utf-8");
-            
-            var testResponse = _httpClient.GetAsync("/api/jobs/0").Result;
-            
-            if (testResponse.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                token = GetToken("Kerya88", "RUZ365gar31", "ActorApp");
-                    
-                httpHandler.CookieContainer.Add(_baseUri, new Cookie("access_token", token)
-                {
-                    Path = "/",
-                    Secure = false,
-                    HttpOnly = false,
-                    Expires = DateTime.MinValue
-                });
-            }
         }
         
+        //запуск работы
         public string RunJob(string name, string[] resources, Dictionary<string, object> inputs, string appId)
         {
+            //сериализуем данные запроса
             var jsonData = JsonSerializer.Serialize(new { name, inputs, resources });
             var request = new StringContent(jsonData, Encoding.UTF8, "application/json");
             
@@ -64,6 +62,7 @@ namespace ActorApp
             return jobId;
         }
 
+        //проверка статуса работы
         public (bool, string) CheckState(string jodId)
         {
             var response = _httpClient.GetAsync($"/api/jobs/{jodId}").Result;
@@ -106,34 +105,6 @@ namespace ActorApp
             var token = json!["access_token"].ToString()!;
 
             return token;
-        }
-
-        private class OuterResult
-        {
-            public string Id { get; set; }
-            public string Name { get; set; }
-            public string AppId { get; set; }
-            public string AppAlias { get; set; }
-            public string AppName { get; set; }
-            public string AppVersion { get; set; }
-            public string User { get; set; }
-            public string State { get; set; }
-            public int Submitted { get; set; }
-            public Inputs Inputs { get; set; }
-            public object ResourceRequirments { get; set; }
-            public string[] Resources { get; set; }
-            public string[] AllowList { get; set; }
-            public int LastUpdateTime { get; set; }
-            public string Description { get; set; }
-            public bool NotifyUser { get; set; }
-            public int DataSize { get; set; }
-            public string Info { get; set; }
-            public InnerResult Result { get; set; }
-        }
-        private class Inputs
-        {
-            public string S { get; set; }
-            public string F { get; set; }
         }
         
         private class InnerResult
